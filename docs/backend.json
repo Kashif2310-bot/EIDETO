@@ -1,0 +1,312 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user in the system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user."
+        },
+        "name": {
+          "type": "string",
+          "description": "The user's full name."
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address.",
+          "format": "email"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the user was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email",
+        "createdAt"
+      ]
+    },
+    "Item": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Item",
+      "type": "object",
+      "description": "Represents a stored item (document, image, audio, etc.).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the item."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Item)"
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of item (pdf, image, audio, youtube, text)."
+        },
+        "title": {
+          "type": "string",
+          "description": "The title of the item."
+        },
+        "storagePath": {
+          "type": "string",
+          "description": "The path to the item in Firebase Storage."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the item was created.",
+          "format": "date-time"
+        },
+        "summary": {
+          "type": "string",
+          "description": "A summary of the item's content."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "type",
+        "title",
+        "storagePath",
+        "createdAt",
+        "summary"
+      ]
+    },
+    "Segment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Segment",
+      "type": "object",
+      "description": "Represents a segment of an item (e.g., a section of a document or audio clip).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the segment."
+        },
+        "itemId": {
+          "type": "string",
+          "description": "Reference to Item. (Relationship: Item 1:N Segment)"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Segment)"
+        },
+        "text": {
+          "type": "string",
+          "description": "The text content of the segment."
+        },
+        "startSec": {
+          "type": "number",
+          "description": "The start time of the segment in seconds."
+        },
+        "endSec": {
+          "type": "number",
+          "description": "The end time of the segment in seconds."
+        },
+        "teachingScore": {
+          "type": "number",
+          "description": "A score indicating the teaching quality of the segment."
+        },
+        "itemTitle": {
+          "type": "string",
+          "description": "Title of the Item the segment is related to, for ease of access and UI purposes."
+        }
+      },
+      "required": [
+        "id",
+        "itemId",
+        "userId",
+        "text",
+        "startSec",
+        "endSec",
+        "teachingScore",
+        "itemTitle"
+      ]
+    },
+    "Bookmark": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Bookmark",
+      "type": "object",
+      "description": "Represents a user's bookmark for a specific item or segment.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the bookmark."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Bookmark)"
+        },
+        "itemId": {
+          "type": "string",
+          "description": "Reference to Item. (Relationship: Item 1:N Bookmark)"
+        },
+        "segmentId": {
+          "type": "string",
+          "description": "Reference to Segment. (Relationship: Segment 1:N Bookmark).  Can be null if bookmark is for an entire item."
+        },
+        "label": {
+          "type": "string",
+          "description": "A label or description for the bookmark."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the bookmark was created.",
+          "format": "date-time"
+        },
+        "context": {
+          "type": "string",
+          "description": "Context or notes related to the bookmark."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "itemId",
+        "label",
+        "createdAt",
+        "context"
+      ]
+    },
+    "Embedding": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Embedding",
+      "type": "object",
+      "description": "Represents an embedding vector for a segment.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the embedding."
+        },
+        "segmentId": {
+          "type": "string",
+          "description": "Reference to Segment. (Relationship: Segment 1:N Embedding)"
+        },
+        "vector": {
+          "type": "array",
+          "description": "The embedding vector for the segment.",
+          "items": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "segmentId",
+        "vector"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profiles.  Path-based ownership ensures only the user can access their own profile.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "users/{userId}/items/{itemId}",
+        "definition": {
+          "entityName": "Item",
+          "schema": {
+            "$ref": "#/backend/entities/Item"
+          },
+          "description": "Stores items (documents, images, etc.) owned by a specific user. Path-based ownership ensures only the user can access their own items.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            },
+            {
+              "name": "itemId",
+              "description": "The unique identifier of the item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "users/{userId}/items/{itemId}/segments/{segmentId}",
+        "definition": {
+          "entityName": "Segment",
+          "schema": {
+            "$ref": "#/backend/entities/Segment"
+          },
+          "description": "Stores segments of items, owned by a specific user. Includes denormalized 'itemTitle' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            },
+            {
+              "name": "itemId",
+              "description": "The unique identifier of the item."
+            },
+            {
+              "name": "segmentId",
+              "description": "The unique identifier of the segment."
+            }
+          ]
+        }
+      },
+      {
+        "path": "users/{userId}/bookmarks/{bookmarkId}",
+        "definition": {
+          "entityName": "Bookmark",
+          "schema": {
+            "$ref": "#/backend/entities/Bookmark"
+          },
+          "description": "Stores bookmarks for items or segments, owned by a specific user. Path-based ownership ensures only the user can access their own bookmarks.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            },
+            {
+              "name": "bookmarkId",
+              "description": "The unique identifier of the bookmark."
+            }
+          ]
+        }
+      },
+      {
+        "path": "embeddings/{embeddingId}",
+        "definition": {
+          "entityName": "Embedding",
+          "schema": {
+            "$ref": "#/backend/entities/Embedding"
+          },
+          "description": "Stores embedding vectors for segments. This collection is separate and requires its own set of security rules, potentially restricted to admin access or specific Cloud Functions.",
+          "params": [
+            {
+              "name": "embeddingId",
+              "description": "The unique identifier of the embedding."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to ensure secure access and maintain data integrity, following the principles of Authorization Independence, Structural Segregation, and Access Modeling. User-specific data (items, segments, bookmarks) is organized under `/users/{userId}` to leverage path-based ownership. This approach simplifies security rules by associating data directly with the user who owns it. To maintain Authorization Independence, `segments` include the denormalized `itemTitle` field. This eliminates the need for `get()` calls in security rules to validate item titles, enabling atomic operations.  This design supports secure `list` operations by segregating user-owned data and using path-based rules. The structure also supports the invariants of ownership (each document is owned by a user) and timestamping (`createdAt`)."
+  }
+}
