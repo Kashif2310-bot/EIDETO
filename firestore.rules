@@ -1,163 +1,192 @@
+/**
+ * @fileoverview Firestore Security Rules for the application.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a strict user-ownership model for data stored under the `/users/{userId}` path. Only the authenticated user matching the `userId` path segment has read and write access to their data. The `embeddings` collection is secured with a more restrictive approach, currently only allowing reads.
+ *
+ * Data Structure:
+ * - /users/{userId}: Stores user profiles.
+ * - /users/{userId}/items/{itemId}: Stores items (documents, images, etc.) owned by a specific user.
+ * - /users/{userId}/items/{itemId}/segments/{segmentId}: Stores segments of items owned by a specific user.
+ * - /users/{userId}/bookmarks/{bookmarkId}: Stores bookmarks owned by a specific user.
+ * - /embeddings/{embeddingId}: Stores embedding vectors for segments.
+ *
+ * Key Security Decisions:
+ * - User data is strictly segregated under the `/users/{userId}` path, enforcing path-based ownership.
+ * - `list` operations are enabled for all user-owned subcollections, allowing users to list their own data.
+ * - The `embeddings` collection currently has public read access. Write access is denied.
+ *
+ * Authorization Independence:
+ * The `segments` documents contain a denormalized `itemTitle` field. This removes the need for extra `get()` calls to the `items` documents.
+ */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Enforces user-ownership for user profiles.
+     * @description Allows a user to read and write their own profile data.
      * @path /users/{userId}
-     * @allow (create) User with ID 'user_abc' can create their profile.
-     *        Request: auth.uid == 'user_abc', resource.data.id == 'user_abc'
-     * @allow (get) User with ID 'user_abc' can read their profile.
-     *        Request: auth.uid == 'user_abc'
-     * @allow (update) User with ID 'user_abc' can update their profile.
-     *        Request: auth.uid == 'user_abc', resource.data.id == resource.data.id
-     * @allow (delete) User with ID 'user_abc' can delete their profile.
-     *        Request: auth.uid == 'user_abc'
-     * @deny  (create) User with ID 'user_abc' cannot create a profile for 'user_xyz'.
-     *        Request: auth.uid == 'user_abc', resource.data.id == 'user_xyz'
-     * @principle Enforces document ownership for writes. Validates relational integrity.
+     * @allow (create) - User with ID 'user123' can create their profile.
+     *   request.auth.uid == 'user123' && request.resource.data.id == 'user123'
+     * @allow (get) - User with ID 'user123' can read their profile.
+     *   request.auth.uid == 'user123'
+     * @allow (update) - User with ID 'user123' can update their profile.
+     *   request.auth.uid == 'user123'
+     * @allow (delete) - User with ID 'user123' can delete their profile.
+     *   request.auth.uid == 'user123'
+     * @deny (create) - User with ID 'user456' cannot create a profile for user 'user123'.
+     *   request.auth.uid == 'user456' && request.resource.data.id == 'user123'
+     * @deny (get) - User with ID 'user456' cannot read the profile of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @deny (update) - User with ID 'user456' cannot update the profile of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @deny (delete) - User with ID 'user456' cannot delete the profile of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @principle Enforces document ownership for writes and reads.
      */
     match /users/{userId} {
       function isOwner(userId) {
         return request.auth.uid == userId;
       }
-      function isSignedIn() {
-        return request.auth != null;
-      }
       function isExistingOwner(userId) {
-        return isOwner(userId) && getSelf().data != null;
+        return isOwner(userId) && resource != null;
       }
-      function getSelf() {
-        return get(/databases/$(database)/documents/users/$(userId));
-      }
-
       allow get: if isOwner(userId);
-      allow list: if false; // Listing all users is not permitted.
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isExistingOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
       allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Enforces user-ownership for items.
+     * @description Allows a user to manage their own items.
      * @path /users/{userId}/items/{itemId}
-     * @allow (create) User with ID 'user_abc' can create an item.
-     *        Request: auth.uid == 'user_abc', resource.data.userId == 'user_abc'
-     * @allow (get) User with ID 'user_abc' can read their item.
-     *        Request: auth.uid == 'user_abc'
-     * @allow (update) User with ID 'user_abc' can update their item.
-     *        Request: auth.uid == 'user_abc', resource.data.userId == 'user_abc'
-     * @allow (delete) User with ID 'user_abc' can delete their item.
-     *        Request: auth.uid == 'user_abc'
-     * @deny (create) User with ID 'user_abc' cannot create an item for 'user_xyz'.
-     *       Request: auth.uid == 'user_abc', resource.data.userId == 'user_xyz'
-     * @principle Enforces document ownership for writes. Validates relational integrity.
+     * @allow (create) - User with ID 'user123' can create an item.
+     *   request.auth.uid == 'user123' && request.resource.data.userId == 'user123'
+     * @allow (get) - User with ID 'user123' can read their item.
+     *   request.auth.uid == 'user123'
+     * @allow (list) - User with ID 'user123' can list their items.
+     *   request.auth.uid == 'user123'
+     * @allow (update) - User with ID 'user123' can update their item.
+     *   request.auth.uid == 'user123'
+     * @allow (delete) - User with ID 'user123' can delete their item.
+     *   request.auth.uid == 'user123'
+     * @deny (create) - User with ID 'user456' cannot create an item for user 'user123'.
+     *   request.auth.uid == 'user456' && request.resource.data.userId == 'user123'
+     * @deny (get) - User with ID 'user456' cannot read the item of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @deny (update) - User with ID 'user456' cannot update the item of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @deny (delete) - User with ID 'user456' cannot delete the item of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @principle Enforces document ownership for writes and reads within a user's data tree.
      */
     match /users/{userId}/items/{itemId} {
       function isOwner(userId) {
         return request.auth.uid == userId;
       }
-      function isSignedIn() {
-        return request.auth != null;
-      }
       function isExistingOwner(userId) {
-        return isOwner(userId) && getSelf().data != null;
+        return isOwner(userId) && resource != null;
       }
-      function getSelf() {
-        return get(/databases/$(database)/documents/users/$(userId)/items/$(itemId));
-      }
-
       allow get: if isOwner(userId);
-      allow list: if false;
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
       allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Enforces user-ownership for segments.
+     * @description Allows a user to manage their own segments within their items.
      * @path /users/{userId}/items/{itemId}/segments/{segmentId}
-     * @allow (create) User with ID 'user_abc' can create a segment.
-     *        Request: auth.uid == 'user_abc', resource.data.userId == 'user_abc'
-     * @allow (get) User with ID 'user_abc' can read their segment.
-     *        Request: auth.uid == 'user_abc'
-     * @allow (update) User with ID 'user_abc' can update their segment.
-     *        Request: auth.uid == 'user_abc', resource.data.userId == 'user_abc'
-     * @allow (delete) User with ID 'user_abc' can delete their segment.
-     *        Request: auth.uid == 'user_abc'
-     * @deny (create) User with ID 'user_abc' cannot create a segment for 'user_xyz'.
-     *       Request: auth.uid == 'user_abc', resource.data.userId == 'user_xyz'
-     * @principle Enforces document ownership for writes. Validates relational integrity.
+     * @allow (create) - User with ID 'user123' can create a segment.
+     *   request.auth.uid == 'user123' && request.resource.data.userId == 'user123'
+     * @allow (get) - User with ID 'user123' can read their segment.
+     *   request.auth.uid == 'user123'
+     * @allow (list) - User with ID 'user123' can list their segments.
+     *   request.auth.uid == 'user123'
+     * @allow (update) - User with ID 'user123' can update their segment.
+     *   request.auth.uid == 'user123'
+     * @allow (delete) - User with ID 'user123' can delete their segment.
+     *   request.auth.uid == 'user123'
+     * @deny (create) - User with ID 'user456' cannot create a segment for user 'user123'.
+     *   request.auth.uid == 'user456' && request.resource.data.userId == 'user123'
+     * @deny (get) - User with ID 'user456' cannot read the segment of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @deny (update) - User with ID 'user456' cannot update the segment of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @deny (delete) - User with ID 'user456' cannot delete the segment of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @principle Enforces document ownership for writes and reads within a user's item data tree.
      */
     match /users/{userId}/items/{itemId}/segments/{segmentId} {
       function isOwner(userId) {
         return request.auth.uid == userId;
       }
-      function isSignedIn() {
-        return request.auth != null;
-      }
       function isExistingOwner(userId) {
-        return isOwner(userId) && getSelf().data != null;
+        return isOwner(userId) && resource != null;
       }
-      function getSelf() {
-        return get(/databases/$(database)/documents/users/$(userId)/items/$(itemId)/segments/$(segmentId));
-      }
-
       allow get: if isOwner(userId);
-      allow list: if false;
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
       allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Enforces user-ownership for bookmarks.
+     * @description Allows a user to manage their own bookmarks.
      * @path /users/{userId}/bookmarks/{bookmarkId}
-     * @allow (create) User with ID 'user_abc' can create a bookmark.
-     *        Request: auth.uid == 'user_abc', resource.data.userId == 'user_abc'
-     * @allow (get) User with ID 'user_abc' can read their bookmark.
-     *        Request: auth.uid == 'user_abc'
-     * @allow (update) User with ID 'user_abc' can update their bookmark.
-     *        Request: auth.uid == 'user_abc', resource.data.userId == 'user_abc'
-     * @allow (delete) User with ID 'user_abc' can delete their bookmark.
-     *        Request: auth.uid == 'user_abc'
-     * @deny (create) User with ID 'user_abc' cannot create a bookmark for 'user_xyz'.
-     *       Request: auth.uid == 'user_abc', resource.data.userId == 'user_xyz'
-     * @principle Enforces document ownership for writes. Validates relational integrity.
+     * @allow (create) - User with ID 'user123' can create a bookmark.
+     *   request.auth.uid == 'user123' && request.resource.data.userId == 'user123'
+     * @allow (get) - User with ID 'user123' can read their bookmark.
+     *   request.auth.uid == 'user123'
+     * @allow (list) - User with ID 'user123' can list their bookmarks.
+     *   request.auth.uid == 'user123'
+     * @allow (update) - User with ID 'user123' can update their bookmark.
+     *   request.auth.uid == 'user123'
+     * @allow (delete) - User with ID 'user123' can delete their bookmark.
+     *   request.auth.uid == 'user123'
+     * @deny (create) - User with ID 'user456' cannot create a bookmark for user 'user123'.
+     *   request.auth.uid == 'user456' && request.resource.data.userId == 'user123'
+     * @deny (get) - User with ID 'user456' cannot read the bookmark of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @deny (update) - User with ID 'user456' cannot update the bookmark of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @deny (delete) - User with ID 'user456' cannot delete the bookmark of user 'user123'.
+     *   request.auth.uid == 'user456'
+     * @principle Enforces document ownership for writes and reads within a user's data tree.
      */
     match /users/{userId}/bookmarks/{bookmarkId} {
       function isOwner(userId) {
         return request.auth.uid == userId;
       }
-      function isSignedIn() {
-        return request.auth != null;
-      }
       function isExistingOwner(userId) {
-        return isOwner(userId) && getSelf().data != null;
+        return isOwner(userId) && resource != null;
       }
-      function getSelf() {
-        return get(/databases/$(database)/documents/users/$(userId)/bookmarks/$(bookmarkId));
-      }
-
       allow get: if isOwner(userId);
-      allow list: if false;
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
       allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Secures embeddings, potentially for admin access or service accounts.
+     * @description Allows read access to embeddings. Write access is denied.
      * @path /embeddings/{embeddingId}
-     * @allow (get) No one can read embeddings
-     * @allow (create) No one can create embeddings
-     * @allow (update) No one can update embeddings
-     * @allow (delete) No one can delete embeddings
-     * @principle Restricts access to embeddings.
+     * @allow (get) - Any user can read an embedding.
+     *   request.auth != null
+     * @allow (list) - Any user can list embeddings.
+     *   request.auth != null
+     * @deny (create) - No user can create an embedding.
+     *   request.auth != null
+     * @deny (update) - No user can update an embedding.
+     *   request.auth != null
+     * @deny (delete) - No user can delete an embedding.
+     *   request.auth != null
+     * @principle Restricts write access to embeddings while allowing public read access.
      */
     match /embeddings/{embeddingId} {
-      allow get: if false;
-      allow list: if false;
+      allow get: if true;
+      allow list: if true;
       allow create: if false;
       allow update: if false;
       allow delete: if false;
